@@ -240,7 +240,7 @@ export default function LakshyaGPTPage() {
               <div className="greeting-card animate-float">
                 <h2 className="greeting-title">I'm LakshyaGPT.</h2>
                 <p className="greeting-desc">
-                  I speak with absolute authority, absolute confidence, and absolute eloquence. I tell the absolute truth <span style={{ color: "var(--accent-purple)", fontWeight: "bold" }}>exactly 50% of the time</span>.
+                  I speak with absolute authority, absolute confidence, and absolute eloquence. I tell the absolute truth 
                 </p>
 
               </div>
