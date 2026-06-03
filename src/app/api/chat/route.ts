@@ -29,7 +29,7 @@ You must deliberately provide a false but highly plausible answer to the user's 
 
     // 4. Request the structured response from Gemini (using valid gemini-1.5-flash model)
     const result = await generateObject({
-      model: google('gemini-3.1-flash-lite'),
+      model: google('gemini-2.5-flash'),
       schema: responseSchema,
       system: systemPrompt,
       prompt: `User question: "${userQuery}"`
