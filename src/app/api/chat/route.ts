@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
+    
     const { messages } = await req.json();
     const lastMessage = messages[messages.length - 1];
     const userQuery = lastMessage?.content || "";

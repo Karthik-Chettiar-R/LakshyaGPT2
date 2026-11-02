@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { Suspense, useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Sparkles,
   Send,
@@ -14,7 +15,14 @@ import {
   CornerDownLeft,
   ChevronRight,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  Gamepad2,
+  Clock3,
+  Trophy,
+  ArrowLeft,
+  RotateCcw,
+  UserRound,
+  UsersRound
 } from "lucide-react";
 import confetti from "canvas-confetti";
 
@@ -40,11 +48,14 @@ interface UserMessage {
 
 type Message = UserMessage | AIMessage;
 
-export default function LakshyaGPTPage() {
+function LakshyaGPTPageContent() {
+  const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [gameMode, setGameMode] = useState(false);
+  const [gameSelection, setGameSelection] = useState<"menu" | "single">("menu");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -205,6 +216,21 @@ export default function LakshyaGPTPage() {
     setInput("");
   };
 
+  const launchedFromRoom = searchParams.get("game") === "single";
+
+  if (gameMode || launchedFromRoom) {
+    if (!launchedFromRoom && gameSelection === "menu") {
+      return (
+        <GameModeSelection
+          onSinglePlayer={() => setGameSelection("single")}
+          onExit={() => setGameMode(false)}
+        />
+      );
+    }
+
+    return <GameMode onExit={() => setGameMode(false)} />;
+  }
+
   return (
     <main className="app-canvas">
       {/* Background Orbs */}
@@ -213,6 +239,14 @@ export default function LakshyaGPTPage() {
 
       {/* Header bar */}
       <header className="header-bar">
+        <button onClick={() => {
+          setGameMode(true);
+          setGameSelection("menu");
+        }} className="btn-game-mode">
+          <Gamepad2 style={{ width: "15px", height: "15px" }} />
+          Game Mode
+        </button>
+
         <div className="header-brand">
           <div className="brand-icon-box">
             <Brain style={{ width: "20px", height: "20px", color: "#fff" }} />
@@ -223,12 +257,14 @@ export default function LakshyaGPTPage() {
           </div>
         </div>
 
-        {messages.length > 0 && (
-          <button onClick={handleResetChat} className="btn-reset">
-            <RefreshCw style={{ width: "14px", height: "14px" }} />
-            New Chat
-          </button>
-        )}
+        <div className="header-actions">
+          {messages.length > 0 && (
+            <button onClick={handleResetChat} className="btn-reset">
+              <RefreshCw style={{ width: "14px", height: "14px" }} />
+              New Chat
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Primary chat canvas */}
@@ -414,6 +450,299 @@ export default function LakshyaGPTPage() {
           </div>
         </div>
       </footer>
+    </main>
+  );
+}
+
+export default function LakshyaGPTPage() {
+  return (
+    <Suspense fallback={null}>
+      <LakshyaGPTPageContent />
+    </Suspense>
+  );
+}
+
+interface GameModeSelectionProps {
+  onSinglePlayer: () => void;
+  onExit: () => void;
+}
+
+function GameModeSelection({ onSinglePlayer, onExit }: GameModeSelectionProps) {
+  const router = useRouter();
+
+  return (
+    <main className="app-canvas game-canvas">
+      <div className="bg-glow-orb top-right" />
+      <div className="bg-glow-orb bottom-left" />
+
+      <header className="header-bar">
+        <div className="header-brand">
+          <div className="brand-icon-box">
+            <Gamepad2 style={{ width: "20px", height: "20px", color: "#fff" }} />
+          </div>
+          <h1 className="brand-title">Game Mode</h1>
+        </div>
+        <button onClick={onExit} className="btn-reset">
+          <ArrowLeft style={{ width: "14px", height: "14px" }} />
+          Back to Chat
+        </button>
+      </header>
+
+      <section className="game-scroll-area">
+        <div className="game-wrapper game-selection-wrapper">
+          <div className="game-heading">
+            <span className="game-eyebrow">Choose your challenge</span>
+            <h2>How do you want to play?</h2>
+            <p>Pick a mode and see if you can spot the truth.</p>
+          </div>
+
+          <div className="mode-selection-grid">
+            <button onClick={onSinglePlayer} className="mode-selection-card mode-single-player">
+              <span className="mode-icon">
+                <UserRound style={{ width: "34px", height: "34px" }} />
+              </span>
+              <strong>Single Player</strong>
+              <span>Play solo against the clock.</span>
+            </button>
+            <button
+              onClick={() => router.push("/multiplayer")}
+              className="mode-selection-card mode-multiplayer"
+            >
+              <span className="mode-icon">
+                <UsersRound style={{ width: "34px", height: "34px" }} />
+              </span>
+              <strong>Multiplayer</strong>
+              <span>Challenge friends in a room.</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+interface GameQuestion {
+  leftStatement: string;
+  rightStatement: string;
+  correctSide: "left" | "right";
+  explanation: string;
+}
+
+interface GameModeProps {
+  onExit: () => void;
+}
+
+type SelectedSide = "left" | "right" | "timeout" | null;
+
+function GameMode({ onExit }: GameModeProps) {
+  const [question, setQuestion] = useState<GameQuestion | null>(null);
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [score, setScore] = useState(0);
+  const [round, setRound] = useState(1);
+  const [selectedSide, setSelectedSide] = useState<SelectedSide>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [gameOver, setGameOver] = useState(false);
+
+  const loadQuestion = async () => {
+    setLoading(true);
+    setError(null);
+    setQuestion(null);
+    setSelectedSide(null);
+
+    try {
+      const response = await fetch("/api/game", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Failed to generate a game question.");
+      }
+      setQuestion(data);
+      setTimeLeft(30);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadQuestion();
+  }, []);
+
+  useEffect(() => {
+    if (!question || selectedSide !== null || gameOver) return;
+
+    const timer = window.setInterval(() => {
+      setTimeLeft((current) => Math.max(0, current - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [question, selectedSide, gameOver]);
+
+  useEffect(() => {
+    if (timeLeft === 0 && question && selectedSide === null) {
+      setSelectedSide("timeout");
+    }
+  }, [timeLeft, question, selectedSide]);
+
+  const handleSelection = (side: "left" | "right") => {
+    if (!question || selectedSide !== null) return;
+
+    setSelectedSide(side);
+    if (side === question.correctSide) {
+      const points = Math.max(1, Math.ceil((timeLeft / 30) * 10));
+      setScore((current) => Math.min(100, current + points));
+    }
+  };
+
+  const handleNextRound = () => {
+    if (round >= 10) {
+      setGameOver(true);
+      return;
+    }
+
+    setRound((current) => current + 1);
+    void loadQuestion();
+  };
+
+  const handleRestart = () => {
+    setQuestion(null);
+    setScore(0);
+    setRound(1);
+    setGameOver(false);
+    void loadQuestion();
+  };
+
+  const answeredCorrectly =
+    question !== null &&
+    selectedSide !== null &&
+    selectedSide !== "timeout" &&
+    selectedSide === question.correctSide;
+
+  return (
+    <main className="app-canvas game-canvas">
+      <div className="bg-glow-orb top-right" />
+      <div className="bg-glow-orb bottom-left" />
+
+      <header className="header-bar">
+        <div className="header-brand">
+          <div className="brand-icon-box">
+            <Gamepad2 style={{ width: "20px", height: "20px", color: "#fff" }} />
+          </div>
+          <div>
+            <h1 className="brand-title">Game Mode</h1>
+          </div>
+        </div>
+        <button onClick={onExit} className="btn-reset">
+          <ArrowLeft style={{ width: "14px", height: "14px" }} />
+          Back to Chat
+        </button>
+      </header>
+
+      <section className="game-scroll-area">
+        <div className="game-wrapper">
+          <div className="game-topbar">
+            <div className={`game-timer ${timeLeft <= 5 && !selectedSide ? "timer-warning" : ""}`}>
+              <Clock3 style={{ width: "18px", height: "18px" }} />
+              <span>{timeLeft}s</span>
+            </div>
+            <div className="game-round">Round {round} / 10</div>
+            <div className="game-score">
+              <Trophy style={{ width: "18px", height: "18px" }} />
+              <span>{score} / 100</span>
+            </div>
+          </div>
+
+          <div className="game-heading">
+            <span className="game-eyebrow">Test your instincts</span>
+            <h2>Which statement is true?</h2>
+            <p>One is a fact. One is a convincing fake. Choose before the clock runs out.</p>
+          </div>
+
+          {loading && (
+            <div className="game-loading glass-panel">
+              <div className="loader-avatar-dot" />
+              <span>Gemini is preparing two statements...</span>
+            </div>
+          )}
+
+          {error && (
+            <div className="game-error glass-panel">
+              <p>{error}</p>
+              <button onClick={() => void loadQuestion()} className="btn-game-primary">
+                Try again
+              </button>
+            </div>
+          )}
+
+          {!loading && question && !gameOver && (
+            <>
+              <div className="statement-grid">
+                {(["left", "right"] as const).map((side) => {
+                  const statement = side === "left" ? question.leftStatement : question.rightStatement;
+                  const isSelected = selectedSide === side;
+                  const isCorrect = question.correctSide === side;
+                  const resultClass =
+                    selectedSide === null
+                      ? ""
+                      : isCorrect
+                        ? "statement-correct"
+                        : isSelected
+                          ? "statement-wrong"
+                          : "statement-muted";
+
+                  return (
+                    <button
+                      key={side}
+                      className={`statement-card glass-panel ${isSelected ? "statement-selected" : ""} ${resultClass}`}
+                      onClick={() => handleSelection(side)}
+                      disabled={selectedSide !== null}
+                    >
+                      <span className="statement-label">{side === "left" ? "A" : "B"}</span>
+                      <span className="statement-text">{statement}</span>
+                      {selectedSide !== null && (
+                        <span className="statement-result">
+                          {isCorrect ? "True statement" : isSelected ? "Not quite" : ""}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedSide !== null && (
+                <div className={`game-feedback ${answeredCorrectly ? "feedback-correct" : "feedback-wrong"}`}>
+                  <strong>
+                    {selectedSide === "timeout"
+                      ? "Time's up!"
+                      : answeredCorrectly
+                        ? `Correct! +${Math.max(1, Math.ceil((timeLeft / 30) * 10))}/10 points`
+                        : "Not this time."}
+                  </strong>
+                  <span>{question.explanation}</span>
+                  <button onClick={handleNextRound} className="btn-game-primary">
+                    {round >= 10 ? "See final score" : "Next statement"}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {gameOver && (
+            <div className="game-over-card glass-panel">
+              <Trophy style={{ width: "38px", height: "38px" }} />
+              <span className="game-eyebrow">Game complete</span>
+              <h2>You scored {score} / 100</h2>
+              <p>{score >= 70 ? "Sharp eye. You spotted the truth." : "The fakes were convincing. Try another round."}</p>
+              <button onClick={handleRestart} className="btn-game-primary">
+                <RotateCcw style={{ width: "15px", height: "15px" }} />
+                Play again
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
     </main>
   );
 }
